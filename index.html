@@ -3,473 +3,436 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>NWTRL. SEQUENCER</title>
 <style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:#000; overflow:hidden; cursor:none; }
-  canvas { display:block; }
-  #back {
-    position: fixed;
-    top: 20px;
-    left: 20px;
-    z-index: 9999;
-    color: rgba(255,255,255,0.30);
-    font-size: 10px;
-    letter-spacing: 0.3em;
-    font-family: Georgia, serif;
-    text-decoration: none;
-    transition: color 0.3s;
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    width: 100vw; height: 100vh;
+    font-family: 'Share Tech Mono', monospace;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
   }
+  #start {
+    position: fixed; inset: 0; background: #000;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 12px;
+    z-index: 20; cursor: pointer;
+  }
+  #start p { font-size: 10px; letter-spacing: 0.4em; color: rgba(255,255,255,0.35); }
+  #start small { font-size: 9px; letter-spacing: 0.2em; color: rgba(255,255,255,0.15); }
+
+  #ctrl {
+    position: fixed; top: 0; left: 0; right: 0; height: 88px;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 10px 20px; gap: 10px; z-index: 10; background: #000;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .ctrl-row { display: flex; align-items: center; gap: 12px; }
+  .brand { font-size: 9px; letter-spacing: 0.45em; color: rgba(255,255,255,0.18); }
+  .ctrl-btn {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.18);
+    background: none; color: rgba(255,255,255,0.45);
+    font-size: 11px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.12s;
+  }
+  .ctrl-btn.playing { border-color: rgba(255,255,255,0.55); color: rgba(255,255,255,0.85); }
+  .ctrl-btn:active { transform: scale(0.88); }
+  .pat-group { display: flex; gap: 0; flex: 1; }
+  .pat-btn {
+    flex: 1; height: 34px; border: none;
+    border-right: 1px solid rgba(255,255,255,0.06);
+    background: none; color: rgba(255,255,255,0.2);
+    font-size: 11px; cursor: pointer; transition: all 0.1s;
+    font-family: 'Share Tech Mono', monospace;
+  }
+  .pat-btn:last-child { border-right: none; }
+  .pat-btn.active { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.8); }
+  .bpm-wrap { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .bpm-label { font-size: 8px; letter-spacing: 0.3em; color: rgba(255,255,255,0.2); }
+  .bpm-val { font-size: 20px; color: rgba(255,255,255,0.55); min-width: 42px; text-align: center; }
+  .bpm-btn {
+    width: 22px; height: 22px; border: 1px solid rgba(255,255,255,0.12);
+    background: none; color: rgba(255,255,255,0.3);
+    font-size: 13px; cursor: pointer; border-radius: 2px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .bpm-btn:active { background: rgba(255,255,255,0.08); }
+
+  /* Canvas全面 */
+  #c {
+    position: fixed;
+    top: 88px; left: 0;
+    z-index: 1;
+  }
+
+  /* タッチ用の透明グリッド */
+  #grid {
+    position: fixed;
+    top: 88px; left: 0; right: 0; bottom: 0;
+    display: flex; flex-direction: column;
+    z-index: 2;
+  }
+  .track-block { display: flex; flex-direction: column; flex: 1; }
+  .track-row { display: flex; flex: 1; }
+  .cell { flex: 1; background: transparent; cursor: pointer; }
 </style>
 </head>
 <body>
-<a id="back" href="https://yoshiharumatsumoto-newtral.github.io/">← back</a>
+
+<div id="start">
+  <p>TAP TO START</p>
+  <small>BLUE MONDAY preset</small>
+</div>
+
+<div id="ctrl">
+  <div class="ctrl-row">
+    <span class="brand">NWTRL. SEQUENCER</span>
+    <div class="bpm-wrap">
+      <span class="bpm-label">BPM</span>
+      <button class="bpm-btn" id="bpmDown">−</button>
+      <div class="bpm-val" id="bpmVal">130</div>
+      <button class="bpm-btn" id="bpmUp">＋</button>
+    </div>
+  </div>
+  <div class="ctrl-row">
+    <button class="ctrl-btn" id="playBtn">▶</button>
+    <button class="ctrl-btn" id="stopBtn">■</button>
+    <div class="pat-group" id="patGroup"></div>
+  </div>
+</div>
+
 <canvas id="c"></canvas>
+<div id="grid"></div>
+
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-const DPR = window.devicePixelRatio || 1;
-let W = window.innerWidth, H = window.innerHeight;
+
+const STEPS = 16;
+const TRACKS = ['HH','OH','CL','BD'];
+const NUM_PAT = 4;
+const COLS = 4;
+const ROWS = 4;
+
+let W, H, cellW, cellH;
 
 function resize() {
-  W = window.innerWidth; H = window.innerHeight;
-  canvas.width = W*DPR; canvas.height = H*DPR;
-  canvas.style.width = W+'px'; canvas.style.height = H+'px';
-  ctx.setTransform(DPR,0,0,DPR,0,0);
-}
-resize();
-window.addEventListener('resize', resize);
-
-// ── Microphone ───────────────────────────────────────────
-let micLevel = 0;
-let micReady = false;
-async function initMic() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio:true, video:false });
-    const ac2 = new AudioContext();
-    const src = ac2.createMediaStreamSource(stream);
-    const an  = ac2.createAnalyser(); an.fftSize = 256;
-    src.connect(an);
-    const buf = new Uint8Array(an.frequencyBinCount);
-    micReady = true;
-    function tick() {
-      an.getByteTimeDomainData(buf);
-      let sum = 0;
-      for (let i=0;i<buf.length;i++){const v=(buf[i]-128)/128;sum+=v*v;}
-      const raw = Math.sqrt(sum/buf.length);
-      micLevel += (raw*5.0 - micLevel)*0.2;
-      micLevel = Math.min(Math.max(micLevel,0),1);
-      requestAnimationFrame(tick);
-    }
-    tick();
-  } catch(e) { console.warn('Mic not available',e); }
-}
-initMic();
-
-// ── Audio ────────────────────────────────────────────────
-let ac = null, masterGain = null;
-function getAC() {
-  if (!ac) {
-    ac = new (window.AudioContext || window.webkitAudioContext)();
-    masterGain = ac.createGain();
-    masterGain.gain.value = 1.0;
-    masterGain.connect(ac.destination);
-  }
-  return ac;
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight - 88;
+  cellW = W / COLS;
+  cellH = H / (TRACKS.length * ROWS) * 0.5;
 }
 
-// ── 808 Kick ─────────────────────────────────────────────
-// Y軸: 上=高め(80hz→30hz)、下=超低め(55hz→20hz)
-function playKick(y) {
-  const a = getAC(); a.resume();
-  const now = a.currentTime;
-  const t = y / H;
+const P = [
+  [[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0],[0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0],[1,0,0,0,1,0,1,0,0,0,0,0,1,0,1,0]],
+  [[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,1,0,0,1,0,0,0],[0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0],[1,0,0,0,1,0,1,0,1,0,0,0,1,0,1,0]],
+  [[0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0],[1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0]],
+  [[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1],[0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0],[1,0,1,0,1,0,0,0,1,0,1,0,1,0,0,0]],
+].map(pat => pat.map(r => r.map(v => v === 1)));
 
-  // Y軸でピッチマッピング
-  const startFreq = 80  - t * 25;  // 80→55hz
-  const endFreq   = 30  - t * 10;  // 30→20hz
-  const decay     = 0.6 + t * 0.4; // 下ほど長く伸びる
+let bpm = 130;
+let playing = false;
+let currentStep = 0;
+let intervalId = null;
+let currentPat = 0;
+let audioCtx = null;
+let patterns = P.map(pat => pat.map(r => [...r]));
 
-  // ── サブサイン（808の核心）
-  const osc = a.createOscillator();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(startFreq, now);
-  // 急激なピッチ降下 — ここがクラブっぽさの鍵
-  osc.frequency.exponentialRampToValueAtTime(endFreq, now + 0.035);
+// 脈動
+let pulsePhase = 0;
+let glowMap = Array.from({length: 4}, () => new Array(16).fill(0));
+let glowQueue = [];
+let frameCount = 0;
+// 回転マップ：各セルの現在の回転角度と角速度
+let rotAngle = Array.from({length: 4}, () => new Array(16).fill(0));
+let rotVel = Array.from({length: 4}, () => new Array(16).fill(0));
 
-  // ── サブのアンプエンベロープ — 長くずっしり
-  const oscEnv = a.createGain();
-  oscEnv.gain.setValueAtTime(0.001, now);
-  oscEnv.gain.exponentialRampToValueAtTime(1.0, now + 0.002); // 瞬間アタック
-  oscEnv.gain.exponentialRampToValueAtTime(0.001, now + decay);
-
-  // ── トランジェント（最初の1〜2msの硬い打撃感）
-  const clickOsc = a.createOscillator();
-  clickOsc.type = 'sine';
-  clickOsc.frequency.value = 160;
-  const clickEnv = a.createGain();
-  clickEnv.gain.setValueAtTime(0.001, now);
-  clickEnv.gain.exponentialRampToValueAtTime(0.6, now + 0.001);
-  clickEnv.gain.exponentialRampToValueAtTime(0.001, now + 0.018);
-
-  // ── サチュレーション（808の歪み感）
-  const sat = a.createWaveShaper();
-  const curve = new Float32Array(512);
-  for (let i=0;i<512;i++) {
-    const x = (i*2)/512 - 1;
-    // ソフトクリップ — 低域を潰してパンチを出す
-    curve[i] = (Math.PI + 220) * x / (Math.PI + 220 * Math.abs(x));
-  }
-  sat.curve = curve;
-
-  // ── ローパス（余分な高域をカット）
-  const lp = a.createBiquadFilter();
-  lp.type = 'lowpass';
-  lp.frequency.value = 120;
-  lp.Q.value = 0.5;
-
-  // ── 最終ゲイン
-  const out = a.createGain();
-  out.gain.value = 1.2;
-
-  osc.connect(oscEnv);
-  clickOsc.connect(clickEnv);
-  oscEnv.connect(sat); clickEnv.connect(sat);
-  sat.connect(lp); lp.connect(out); out.connect(masterGain);
-
-  osc.start(now); osc.stop(now + decay + 0.1);
-  clickOsc.start(now); clickOsc.stop(now + 0.025);
+function cellPos(ti, si) {
+  const col = si % COLS;
+  const row = Math.floor(si / COLS);
+  const x = col * cellW;
+  const totalSlots = TRACKS.length * ROWS;
+  const vGap = (H - cellH * totalSlots) / (totalSlots + 1);
+  const idx = ti * ROWS + row;
+  const y = vGap + idx * (cellH + vGap);
+  return { x, y };
 }
 
-// ── 808 Snare / Clap ──────────────────────────────────────
-// Y軸: 上=タイトなリムショット、下=808スラップスネア
-function playSnare(y) {
-  const a = getAC(); a.resume();
-  const now = a.currentTime;
-  const t = y / H;
+function render() {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
 
-  // Y軸でキャラクター変化
-  const noiseDecay  = 0.08 + t * 0.06;  // 上=タイト、下=少し長め
-  const noiseFreq   = 3200 - t * 1800;  // 上=明るい、下=暗い
-  const toneFreq    = 320  - t * 160;   // 上=高い、下=低い
-  const toneDecay   = 0.06 + t * 0.04;
+  const pat = patterns[currentPat];
 
-  // ── ノイズ層（スネアの質感）
-  const bufLen = Math.floor(a.sampleRate * 0.3);
-  const noiseBuf = a.createBuffer(1, bufLen, a.sampleRate);
-  const data = noiseBuf.getChannelData(0);
-  for (let i=0;i<bufLen;i++) data[i] = Math.random()*2-1;
-  const noise = a.createBufferSource();
-  noise.buffer = noiseBuf;
-
-  // ハイパスでロー成分をカット → タイトな質感
-  const hp = a.createBiquadFilter();
-  hp.type = 'highpass';
-  hp.frequency.value = 800;
-  hp.Q.value = 0.5;
-
-  const bp = a.createBiquadFilter();
-  bp.type = 'bandpass';
-  bp.frequency.value = noiseFreq;
-  bp.Q.value = 1.2;
-
-  const noiseEnv = a.createGain();
-  noiseEnv.gain.setValueAtTime(0.001, now);
-  noiseEnv.gain.exponentialRampToValueAtTime(0.9, now + 0.001);
-  noiseEnv.gain.exponentialRampToValueAtTime(0.001, now + noiseDecay);
-
-  // ── トーン層（ボディ）
-  const tone = a.createOscillator();
-  tone.type = 'triangle';
-  tone.frequency.setValueAtTime(toneFreq, now);
-  tone.frequency.exponentialRampToValueAtTime(toneFreq * 0.6, now + toneDecay);
-
-  const toneEnv = a.createGain();
-  toneEnv.gain.setValueAtTime(0.001, now);
-  toneEnv.gain.exponentialRampToValueAtTime(0.7, now + 0.001);
-  toneEnv.gain.exponentialRampToValueAtTime(0.001, now + toneDecay);
-
-  // ── サチュレーション（パンチを出す）
-  const sat = a.createWaveShaper();
-  const curve = new Float32Array(512);
-  for (let i=0;i<512;i++) {
-    const x = (i*2)/512-1;
-    curve[i] = x*(1+1.5)/(1+1.5*Math.abs(x));
+  // 脈動計算
+  if (playing) {
+    pulsePhase += 0.018;
+  } else {
+    pulsePhase = 0;
   }
-  sat.curve = curve;
+  const pulse = 0.12 + Math.sin(pulsePhase * Math.PI * 2) * 0.04;
 
-  const out = a.createGain();
-  out.gain.value = 1.1;
+  frameCount++;
 
-  noise.connect(hp); hp.connect(bp); bp.connect(noiseEnv);
-  tone.connect(toneEnv);
-  noiseEnv.connect(sat); toneEnv.connect(sat);
-  sat.connect(out); out.connect(masterGain);
-
-  noise.start(now); noise.stop(now + noiseDecay + 0.05);
-  tone.start(now); tone.stop(now + toneDecay + 0.05);
-}
-
-// ── Palette ───────────────────────────────────────────────
-const COLORS = [
-  'rgba(255,255,255,','rgba(80,180,255,','rgba(0,255,200,',
-  'rgba(255,80,200,','rgba(180,80,255,','rgba(255,220,0,',
-  'rgba(255,100,80,','rgba(0,255,120,',
-];
-function rndCol(a) { return COLORS[Math.floor(Math.random()*COLORS.length)]+a+')'; }
-
-// ── Ring ──────────────────────────────────────────────────
-class Ring {
-  constructor(initial) {
-    this.x = Math.random()*W;
-    this.y = initial ? Math.random()*H : H+60;
-    this.vx = (Math.random()-0.5)*0.3;
-    this.vy = -(0.3+Math.random()*0.7);
-    this.bvx = 0; this.bvy = 0;
-    this.r = 8+Math.random()*30;
-    this.w = 0.4+Math.random()*1.0;
-    this.col = rndCol(0.4+Math.random()*0.5);
-    this.alpha = 0;
-    this.maxAlpha = 0.12+Math.random()*0.45;
-    this.phase = Math.random()*Math.PI*2;
-    this.rot = Math.random()*Math.PI*2;
-    this.rotSpd = (Math.random()-0.5)*0.004;
-    this.age = 0;
-    this.lifespan = 320+Math.random()*420;
-    this.fadeIn = 60+Math.random()*80;
-    this.pts = 6+Math.floor(Math.random()*5);
-    this.offsets = [];
-    for (let i=0;i<this.pts;i++) {
-      this.offsets.push({amp:this.r*(0.004+Math.random()*0.012),phase:Math.random()*Math.PI*2,spd:0.0008+Math.random()*0.0018});
-    }
-  }
-  update() {
-    this.age++;
-    const shake = micReady ? micLevel*8.0 : 0;
-    this.bvx *= 0.75; this.bvy *= 0.75;
-    this.x += this.vx+Math.sin(this.age*0.01+this.phase)*0.18+(Math.random()-0.5)*shake+this.bvx;
-    this.y += this.vy+(Math.random()-0.5)*shake*0.5+this.bvy;
-    this.rot += this.rotSpd+micLevel*0.05;
-    if (this.age<this.fadeIn) this.alpha=(this.age/this.fadeIn)*this.maxAlpha;
-    else if (this.age>this.lifespan-60) this.alpha=Math.max(0,this.alpha-this.maxAlpha/60);
-    else this.alpha=this.maxAlpha;
-  }
-  draw(ts) {
-    if (this.alpha<0.004) return;
-    const SAMPLES=80, points=[];
-    for (let i=0;i<SAMPLES;i++) {
-      const angle=(i/SAMPLES)*Math.PI*2;
-      let wobble=0;
-      for (let j=0;j<this.offsets.length;j++) {
-        const o=this.offsets[j];
-        wobble+=o.amp*Math.sin(angle*(j+1)+ts*o.spd+o.phase);
-      }
-      points.push({x:Math.cos(angle)*(this.r+wobble),y:Math.sin(angle)*(this.r+wobble)});
-    }
-    ctx.save();
-    ctx.translate(this.x,this.y); ctx.rotate(this.rot);
-    ctx.globalAlpha=this.alpha; ctx.strokeStyle=this.col;
-    ctx.lineWidth=this.w; ctx.lineCap='round'; ctx.lineJoin='round';
-    ctx.beginPath();
-    ctx.moveTo((points[0].x+points[SAMPLES-1].x)*0.5,(points[0].y+points[SAMPLES-1].y)*0.5);
-    for (let i=0;i<SAMPLES;i++) {
-      const c=points[i],n=points[(i+1)%SAMPLES];
-      ctx.quadraticCurveTo(c.x,c.y,(c.x+n.x)*0.5,(c.y+n.y)*0.5);
-    }
-    ctx.closePath(); ctx.stroke(); ctx.restore();
-  }
-  blast(tx,ty,force=12) {
-    const dx=this.x-tx,dy=this.y-ty,d=Math.sqrt(dx*dx+dy*dy);
-    if (d<250){const f=(1-d/250)*force;this.bvx+=(dx/d)*f;this.bvy+=(dy/d)*f;}
-  }
-  isDead() { return this.age>this.lifespan||this.y<-80; }
-}
-
-// ── Strand ────────────────────────────────────────────────
-class Strand {
-  constructor(ox,oy,angle,spd,len,col,w) {
-    this.ox=ox;this.oy=oy;this.angle=angle;this.spd=spd;this.maxLen=len;
-    this.col=col;this.w=w;this.tx=ox;this.ty=oy;this.progress=0;
-    this.nodes=null;this.shot=false;this.life=1.0;
-    this.decay=0.004+Math.random()*0.006;this.curve=(Math.random()-0.5)*0.6;
-  }
-  update() {
-    if (!this.shot) {
-      this.progress+=this.spd/this.maxLen;
-      if (this.progress>=1) {
-        this.progress=1;this.shot=true;
-        const n=8;this.nodes=[];
-        for (let i=0;i<=n;i++) {
-          const t=i/n;
-          const cx=this.ox+Math.cos(this.angle)*this.maxLen*t+Math.sin(this.angle)*this.curve*this.maxLen*t*(1-t)*4;
-          const cy=this.oy+Math.sin(this.angle)*this.maxLen*t-Math.cos(this.angle)*this.curve*this.maxLen*t*(1-t)*4;
-          this.nodes.push({x:cx,y:cy,vx:0,vy:0});
+  // 発火したセルから遅延キューに積む
+  if (playing) {
+    for (let ti = 0; ti < TRACKS.length; ti++) {
+      if (pat[ti][currentStep]) {
+        const srcGRow = ti * ROWS + Math.floor(currentStep / COLS);
+        const srcGCol = currentStep % COLS;
+        for (let ti2 = 0; ti2 < TRACKS.length; ti2++) {
+          for (let si2 = 0; si2 < STEPS; si2++) {
+            const dstGRow = ti2 * ROWS + Math.floor(si2 / COLS);
+            const dstGCol = si2 % COLS;
+            const dRow = Math.abs(dstGRow - srcGRow);
+            const dCol = Math.abs(dstGCol - srcGCol);
+            const dist = Math.sqrt(dRow * dRow + dCol * dCol);
+            const value = dist === 0 ? 1.5 : 0.18 / (1 + dist * 1.5);
+            const delay = Math.round(dist * 5);
+            glowQueue.push({ ti: ti2, si: si2, value, dist, fireAt: frameCount + delay });
+          }
         }
       }
-      const t=this.progress;
-      this.tx=this.ox+Math.cos(this.angle)*this.maxLen*t+Math.sin(this.angle)*this.curve*this.maxLen*t*(1-t)*4;
-      this.ty=this.oy+Math.sin(this.angle)*this.maxLen*t-Math.cos(this.angle)*this.curve*this.maxLen*t*(1-t)*4;
+    }
+  }
+
+  // キューを処理
+  const remaining = [];
+  for (const item of glowQueue) {
+    if (frameCount >= item.fireAt) {
+      glowMap[item.ti][item.si] = Math.min(glowMap[item.ti][item.si] + item.value, 1.0);
+      // 発火セル(dist=0)は回転ほぼなし、遠いセルほど揺れる
+      const distFactor = item.dist === 0 ? 0.01 : Math.min(item.dist * 0.22, 0.8);
+      rotVel[item.ti][item.si] += item.value * distFactor;
     } else {
-      if (this.nodes) for (let i=1;i<this.nodes.length;i++) {
-        const n=this.nodes[i];n.vy+=0.08;n.vx*=0.97;n.vy*=0.97;n.x+=n.vx;n.y+=n.vy;
+      remaining.push(item);
+    }
+  }
+  glowQueue = remaining;
+
+  // glowMap減衰（イーズアウト）
+  for (let ti2 = 0; ti2 < TRACKS.length; ti2++) {
+    for (let si2 = 0; si2 < STEPS; si2++) {
+      const v = glowMap[ti2][si2];
+      glowMap[ti2][si2] = v * (0.70 + v * 0.15);
+    }
+  }
+
+  // 回転物理演算
+  for (let ti2 = 0; ti2 < TRACKS.length; ti2++) {
+    for (let si2 = 0; si2 < STEPS; si2++) {
+      // 角速度に減衰とバネ（中央に戻る力）
+      rotVel[ti2][si2] *= 0.92;
+      rotVel[ti2][si2] -= rotAngle[ti2][si2] * 0.06; // バネ
+      rotAngle[ti2][si2] += rotVel[ti2][si2];
+    }
+  }
+
+  // セル描画（screen合成 + shadowBlur）
+  ctx.globalCompositeOperation = 'screen';
+  for (let ti = 0; ti < TRACKS.length; ti++) {
+    for (let si = 0; si < STEPS; si++) {
+      const { x, y } = cellPos(ti, si);
+      const isOn = pat[ti][si];
+      const glow = glowMap[ti][si];
+      const base = isOn ? pulse : 0.008;
+      const total = Math.min(base + glow, 1.0);
+      if (total > 0.01) {
+        const blur = total * cellW * 2.0;
+        ctx.shadowBlur = blur;
+        ctx.shadowColor = `rgba(255,255,255,${total})`;
+        ctx.fillStyle = `rgba(255,255,255,${total})`;
+        const pad = cellW * 0.15;
+        const cx = x + cellW / 2;
+        const cy = y + cellH / 2;
+        const angle = rotAngle[ti][si];
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(angle);
+        ctx.fillRect(-cellW/2 + pad, -cellH/2 + pad, cellW - pad*2, cellH - pad*2);
+        ctx.restore();
       }
     }
-    this.life-=this.decay;
   }
-  draw() {
-    if (this.life<=0) return;
-    ctx.save();ctx.globalAlpha=this.life*this.life;ctx.strokeStyle=this.col;
-    ctx.lineWidth=this.w*this.life;ctx.lineCap='round';ctx.lineJoin='round';
-    if (!this.shot) {
-      ctx.beginPath();ctx.moveTo(this.ox,this.oy);ctx.lineTo(this.tx,this.ty);ctx.stroke();
-    } else if (this.nodes) {
-      ctx.beginPath();ctx.moveTo(this.nodes[0].x,this.nodes[0].y);
-      for (let i=1;i<this.nodes.length-1;i++) {
-        const mx=(this.nodes[i].x+this.nodes[i+1].x)*0.5;
-        const my=(this.nodes[i].y+this.nodes[i+1].y)*0.5;
-        ctx.quadraticCurveTo(this.nodes[i].x,this.nodes[i].y,mx,my);
-      }
-      ctx.lineTo(this.nodes[this.nodes.length-1].x,this.nodes[this.nodes.length-1].y);ctx.stroke();
-      const tip=this.nodes[this.nodes.length-1];
-      ctx.fillStyle=this.col;ctx.beginPath();ctx.arc(tip.x,tip.y,this.w*1.5,0,Math.PI*2);ctx.fill();
-    }
-    ctx.restore();
-  }
-  isDead() { return this.life<=0; }
-}
+  ctx.shadowBlur = 0;
+  ctx.shadowColor = 'transparent';
+  ctx.globalCompositeOperation = 'source-over';
 
-// ── Shockwave ─────────────────────────────────────────────
-class Shockwave {
-  constructor(x,y){this.x=x;this.y=y;this.r=0;this.life=1.0;this.maxR=100+Math.random()*60;}
-  update(){this.r+=(this.maxR-this.r)*0.14;this.life-=0.055;}
-  draw(){
-    if(this.life<=0)return;
-    ctx.save();ctx.globalAlpha=this.life*0.25;ctx.strokeStyle='rgba(255,255,255,1)';
-    ctx.lineWidth=0.8;ctx.beginPath();ctx.arc(this.x,this.y,this.r,0,Math.PI*2);ctx.stroke();ctx.restore();
-  }
-  isDead(){return this.life<=0;}
-}
 
-// ── Touch ─────────────────────────────────────────────────
-function onTouch(x, y) {
-  if (x < W * 0.5) {
-    playKick(y);
-  } else {
-    playSnare(y);
-  }
 
-  bgBrightness = Math.min(1, bgBrightness+0.18);
-  for (const r of rings) r.blast(x,y);
-  waves.push(new Shockwave(x,y));
-
-  const count = 28+Math.floor(Math.random()*20);
-  for (let i=0;i<count;i++) {
-    const angle=(i/count)*Math.PI*2+(Math.random()-0.5)*0.3;
-    const spd=8+Math.random()*16;
-    const len=80+Math.random()*Math.min(W,H)*0.5;
-    strands.push(new Strand(x,y,angle,spd,len,rndCol(0.7+Math.random()*0.3),0.5+Math.random()*1.8));
-  }
-  const anchors=6+Math.floor(Math.random()*4);
-  for (let i=0;i<anchors;i++) {
-    const angle=(i/anchors)*Math.PI*2;
-    const len=Math.min(W,H)*0.4+Math.random()*Math.min(W,H)*0.3;
-    strands.push(new Strand(x,y,angle,20,len,'rgba(255,255,255,0.9)',1.5+Math.random()));
-  }
-}
-
-canvas.addEventListener('mousedown', e=>{
-  onTouch(e.clientX,e.clientY);
-  const t=new Trail();t.addPoint(e.clientX,e.clientY);activeTrails['mouse']=t;trails.push(t);
-});
-canvas.addEventListener('mousemove', e=>{
-  if(e.buttons>0&&activeTrails['mouse']){
-    activeTrails['mouse'].addPoint(e.clientX,e.clientY);
-    for(const r of rings)r.blast(e.clientX,e.clientY,0.8);
-  }
-});
-canvas.addEventListener('mouseup', e=>{if(activeTrails['mouse']){activeTrails['mouse'].finish();delete activeTrails['mouse'];}});
-
-canvas.addEventListener('touchstart', e=>{
-  e.preventDefault();
-  for(const t of e.changedTouches){
-    onTouch(t.clientX,t.clientY);
-    const trail=new Trail();trail.addPoint(t.clientX,t.clientY);
-    activeTrails[t.identifier]=trail;trails.push(trail);
-  }
-},{passive:false});
-canvas.addEventListener('touchmove', e=>{
-  e.preventDefault();
-  for(const t of e.changedTouches){
-    if(activeTrails[t.identifier]){
-      activeTrails[t.identifier].addPoint(t.clientX,t.clientY);
-      for(const r of rings)r.blast(t.clientX,t.clientY,0.8);
-    }
-  }
-},{passive:false});
-canvas.addEventListener('touchend', e=>{
-  for(const t of e.changedTouches){
-    if(activeTrails[t.identifier]){activeTrails[t.identifier].finish();delete activeTrails[t.identifier];}
-  }
-},{passive:false});
-
-// ── Stars ─────────────────────────────────────────────────
-const stars=[];
-for(let i=0;i<180;i++)stars.push({x:Math.random()*W,y:Math.random()*H,r:0.3+Math.random()*1.1,a:0.08+Math.random()*0.4,phase:Math.random()*Math.PI*2});
-function drawStars(ts){
-  for(const s of stars){
-    ctx.save();ctx.globalAlpha=s.a*(0.5+0.5*Math.sin(ts*0.001+s.phase));
-    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fill();ctx.restore();
-  }
-}
-
-// ── Trail ─────────────────────────────────────────────────
-class Trail {
-  constructor(){this.points=[];this.life=1.0;this.decay=0.006+Math.random()*0.003;this.col='rgba(255,255,255,1)';this.w=7+Math.random()*4;this.active=true;}
-  addPoint(x,y){this.points.push({x,y});if(this.points.length>80)this.points.shift();}
-  finish(){this.active=false;}
-  update(){if(!this.active)this.life-=this.decay;}
-  draw(){
-    if(this.points.length<2||this.life<=0)return;
-    ctx.save();ctx.lineCap='round';ctx.lineJoin='round';
-    for(let i=1;i<this.points.length;i++){
-      const t=i/this.points.length;
-      ctx.globalAlpha=this.life*this.life*t*0.85;ctx.strokeStyle=this.col;ctx.lineWidth=this.w*t;
-      ctx.beginPath();ctx.moveTo(this.points[i-1].x,this.points[i-1].y);ctx.lineTo(this.points[i].x,this.points[i].y);ctx.stroke();
-    }
-    ctx.restore();
-  }
-  isDead(){return !this.active&&this.life<=0;}
-}
-
-// ── State ─────────────────────────────────────────────────
-let rings=[],strands=[],waves=[],trails=[],activeTrails={},bgBrightness=0;
-for(let i=0;i<180;i++)rings.push(new Ring(true));
-
-function drawBG(){
-  bgBrightness=Math.max(0,bgBrightness-0.008);
-  const b=Math.floor(bgBrightness*60);
-  const g=ctx.createRadialGradient(W*0.5,H*0.4,0,W*0.5,H*0.5,Math.max(W,H)*0.8);
-  g.addColorStop(0,`rgb(${4+b},${4+b},${4+b})`);
-  g.addColorStop(0.5,`rgb(${2+b/2},${2+b/2},${2+b/2})`);
-  g.addColorStop(1,'rgb(0,0,0)');
-  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
-}
-function drawVignette(){
-  const vg=ctx.createRadialGradient(W*0.5,H*0.5,H*0.1,W*0.5,H*0.5,H*0.9);
-  vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,0.92)');
-  ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
-}
-
-function render(ts){
-  ctx.setTransform(DPR,0,0,DPR,0,0);
-  drawBG();drawStars(ts);
-  for(let i=rings.length-1;i>=0;i--){rings[i].update();rings[i].draw(ts);if(rings[i].isDead())rings[i]=new Ring(false);}
-  for(let i=trails.length-1;i>=0;i--){trails[i].update();trails[i].draw();if(trails[i].isDead())trails.splice(i,1);}
-  for(let i=waves.length-1;i>=0;i--){waves[i].update();waves[i].draw();if(waves[i].isDead())waves.splice(i,1);}
-  for(let i=strands.length-1;i>=0;i--){strands[i].update();strands[i].draw();if(strands[i].isDead())strands.splice(i,1);}
-  drawVignette();
   requestAnimationFrame(render);
 }
-requestAnimationFrame(render);
+
+// タッチ判定
+function hitTest(px, py) {
+  const col = Math.floor(px / cellW);
+  const totalRow = Math.floor(py / cellH);
+  const ti = Math.floor(totalRow / ROWS);
+  const row = totalRow % ROWS;
+  if (col < 0 || col >= COLS || ti < 0 || ti >= TRACKS.length) return null;
+  const si = row * COLS + col;
+  return { ti, si };
+}
+
+function handleTap(px, py) {
+  const hit = hitTest(px, py - 88);
+  if (!hit) return;
+  const { ti, si } = hit;
+  patterns[currentPat][ti][si] = !patterns[currentPat][ti][si];
+  if (patterns[currentPat][ti][si]) {
+    playSound(ti);
+  }
+}
+
+window.addEventListener('click', e => { if (e.target.closest('#ctrl') || e.target.closest('#start')) return; handleTap(e.clientX, e.clientY); });
+window.addEventListener('touchstart', e => {
+  if (e.target.closest('#ctrl') || e.target.closest('#start')) return;
+  e.preventDefault();
+  for (const t of e.changedTouches) handleTap(t.clientX, t.clientY);
+}, { passive: false });
+
+// 音声
+function playSound(ti) {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const track = TRACKS[ti];
+  if (track === 'BD') bd(t);
+  else if (track === 'CL') cl(t);
+  else if (track === 'HH') hh(t, 0.07);
+  else if (track === 'OH') hh(t, 0.38);
+}
+
+function bd(t) {
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.connect(g); g.connect(audioCtx.destination);
+  o.frequency.setValueAtTime(160, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.18);
+  g.gain.setValueAtTime(1.3, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+  o.start(t); o.stop(t + 0.4);
+}
+
+function cl(t) {
+  for (let i = 0; i < 3; i++) {
+    const src = audioCtx.createBufferSource(), g = audioCtx.createGain(), f = audioCtx.createBiquadFilter();
+    f.type = 'bandpass'; f.frequency.value = 1100; f.Q.value = 0.9;
+    src.buffer = mkNoise(0.018);
+    src.connect(f); f.connect(g); g.connect(audioCtx.destination);
+    g.gain.setValueAtTime(0.75, t + i * 0.012);
+    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.012 + 0.02);
+    src.start(t + i * 0.012);
+  }
+}
+
+function hh(t, dur) {
+  const src = audioCtx.createBufferSource(), g = audioCtx.createGain(), f = audioCtx.createBiquadFilter();
+  f.type = 'highpass'; f.frequency.value = 7500;
+  src.buffer = mkNoise(dur);
+  src.connect(f); f.connect(g); g.connect(audioCtx.destination);
+  g.gain.setValueAtTime(0.55, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.9);
+  src.start(t);
+}
+
+function mkNoise(dur) {
+  const len = Math.floor(audioCtx.sampleRate * dur);
+  const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  return buf;
+}
+
+function tick() {
+  for (let ti = 0; ti < TRACKS.length; ti++) {
+    if (patterns[currentPat][ti][currentStep]) {
+      playSound(ti);
+    }
+  }
+  currentStep = (currentStep + 1) % STEPS;
+}
+
+function startPlay() {
+  if (playing) return;
+  playing = true;
+  document.getElementById('playBtn').classList.add('playing');
+  document.getElementById('playBtn').textContent = '❚❚';
+  intervalId = setInterval(tick, (60 / bpm / 4) * 1000);
+}
+
+function stopPlay() {
+  playing = false;
+  clearInterval(intervalId);
+  currentStep = 0;
+  document.getElementById('playBtn').classList.remove('playing');
+  document.getElementById('playBtn').textContent = '▶';
+}
+
+function switchPat(pi) {
+  currentPat = pi;
+  document.querySelectorAll('.pat-btn').forEach((b, bi) => b.classList.toggle('active', bi === pi));
+}
+
+function buildGrid() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  for (let ti = 0; ti < TRACKS.length; ti++) {
+    const block = document.createElement('div');
+    block.className = 'track-block';
+    for (let row = 0; row < ROWS; row++) {
+      const rowEl = document.createElement('div');
+      rowEl.className = 'track-row';
+      for (let col = 0; col < COLS; col++) {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        rowEl.appendChild(cell);
+      }
+      block.appendChild(rowEl);
+    }
+    grid.appendChild(block);
+  }
+
+  const pg = document.getElementById('patGroup');
+  pg.innerHTML = '';
+  for (let i = 0; i < NUM_PAT; i++) {
+    const btn = document.createElement('button');
+    btn.className = 'pat-btn' + (i === 0 ? ' active' : '');
+    btn.textContent = i + 1;
+    btn.addEventListener('click', () => switchPat(i));
+    pg.appendChild(btn);
+  }
+}
+
+document.getElementById('playBtn').addEventListener('click', () => playing ? stopPlay() : startPlay());
+document.getElementById('stopBtn').addEventListener('click', stopPlay);
+document.getElementById('bpmUp').addEventListener('click', () => {
+  bpm = Math.min(300, bpm + 2);
+  document.getElementById('bpmVal').textContent = bpm;
+  if (playing) { stopPlay(); startPlay(); }
+});
+document.getElementById('bpmDown').addEventListener('click', () => {
+  bpm = Math.max(40, bpm - 2);
+  document.getElementById('bpmVal').textContent = bpm;
+  if (playing) { stopPlay(); startPlay(); }
+});
+
+function handleStart(e) {
+  e.preventDefault();
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const buf = audioCtx.createBuffer(1, 1, 22050);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf; src.connect(audioCtx.destination); src.start(0);
+  document.getElementById('start').style.display = 'none';
+  resize();
+  buildGrid();
+  render();
+}
+
+document.getElementById('start').addEventListener('click', handleStart);
+document.getElementById('start').addEventListener('touchstart', handleStart, { passive: false });
+window.addEventListener('resize', resize);
 </script>
 </body>
 </html>
