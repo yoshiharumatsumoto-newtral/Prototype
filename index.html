@@ -64,23 +64,12 @@
   }
   .bpm-btn:active { background: rgba(255,255,255,0.08); }
 
-  /* Canvas全面 */
   #c {
     position: fixed;
     top: 88px; left: 0;
     z-index: 1;
+    touch-action: none;
   }
-
-  /* タッチ用の透明グリッド */
-  #grid {
-    position: fixed;
-    top: 88px; left: 0; right: 0; bottom: 0;
-    display: flex; flex-direction: column;
-    z-index: 2;
-  }
-  .track-block { display: flex; flex-direction: column; flex: 1; }
-  .track-row { display: flex; flex: 1; }
-  .cell { flex: 1; background: transparent; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -108,7 +97,6 @@
 </div>
 
 <canvas id="c"></canvas>
-<div id="grid"></div>
 
 <script>
 const canvas = document.getElementById('c');
@@ -121,19 +109,62 @@ const COLS = 4;
 const ROWS = 4;
 
 let W, H, cellW, cellH;
+let particles = [];
 
 function resize() {
   W = canvas.width = window.innerWidth;
   H = canvas.height = window.innerHeight - 88;
   cellW = W / COLS;
-  cellH = H / (TRACKS.length * ROWS) * 0.5;
+  const totalSlots = TRACKS.length * ROWS;
+  cellH = H / (totalSlots + (totalSlots + 1) * 0.5); 
+}
+
+function createParticles() {
+  const count = 50; 
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      vx: (Math.random() - 0.5) * 20,
+      vy: (Math.random() - 0.5) * 20,
+      life: 1.0,
+      decay: 0.01 + Math.random() * 0.04
+    });
+  }
 }
 
 const P = [
-  [[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0],[0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0],[1,0,0,0,1,0,1,0,0,0,0,0,1,0,1,0]],
-  [[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,0,0,0,0,1,0,0,1,0,0,0],[0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0],[1,0,0,0,1,0,1,0,1,0,0,0,1,0,1,0]],
-  [[0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0],[1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0]],
-  [[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1],[0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0],[1,0,1,0,1,0,0,0,1,0,1,0,1,0,0,0]],
+  // Pattern 1: スカスカ / 最小構成 (ワンドロップ)
+  [
+    [0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1], // HH (粒子)
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], // OH
+    [0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0], // CL (SD)
+    [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0]  // BD
+  ],
+  
+  // Pattern 2: 少し跳ねる / グルーヴあり
+  [
+    [0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1], // HH (粒子)
+    [0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0], // OH
+    [0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0], // CL (SD)
+    [1,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0]  // BD
+  ],
+  
+  // Pattern 3: Blue Monday (★お気に入りの復元)
+  [
+    [0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0], // HH (粒子)
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], // OH
+    [0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0], // CL
+    [1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0]  // BD
+  ],
+
+  // Pattern 4: 重い / ダウナー (松本さんの新提案)
+  [
+    [0,1,0,0,0,1,0,0,0,1,0,0,0,1,0,0], // HH (粒子)
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0], // OH
+    [0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0], // CL
+    [1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0]  // BD
+  ]
 ].map(pat => pat.map(r => r.map(v => v === 1)));
 
 let bpm = 130;
@@ -144,12 +175,10 @@ let currentPat = 0;
 let audioCtx = null;
 let patterns = P.map(pat => pat.map(r => [...r]));
 
-// 脈動
 let pulsePhase = 0;
 let glowMap = Array.from({length: 4}, () => new Array(16).fill(0));
 let glowQueue = [];
 let frameCount = 0;
-// 回転マップ：各セルの現在の回転角度と角速度
 let rotAngle = Array.from({length: 4}, () => new Array(16).fill(0));
 let rotVel = Array.from({length: 4}, () => new Array(16).fill(0));
 
@@ -168,19 +197,27 @@ function render() {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, W, H);
 
-  const pat = patterns[currentPat];
-
-  // 脈動計算
-  if (playing) {
-    pulsePhase += 0.018;
-  } else {
-    pulsePhase = 0;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= p.decay;
+    if (p.life <= 0) {
+      particles.splice(i, 1);
+      continue;
+    }
+    ctx.globalAlpha = p.life;
+    ctx.fillRect(p.x, p.y, 1.2, 1.2);
   }
-  const pulse = 0.12 + Math.sin(pulsePhase * Math.PI * 2) * 0.04;
+  ctx.globalAlpha = 1.0;
 
+  const pat = patterns[currentPat];
+  if (playing) pulsePhase += 0.018;
+  else pulsePhase = 0;
+  const pulse = 0.12 + Math.sin(pulsePhase * Math.PI * 2) * 0.04;
   frameCount++;
 
-  // 発火したセルから遅延キューに積む
   if (playing) {
     for (let ti = 0; ti < TRACKS.length; ti++) {
       if (pat[ti][currentStep]) {
@@ -202,12 +239,10 @@ function render() {
     }
   }
 
-  // キューを処理
   const remaining = [];
   for (const item of glowQueue) {
     if (frameCount >= item.fireAt) {
       glowMap[item.ti][item.si] = Math.min(glowMap[item.ti][item.si] + item.value, 1.0);
-      // 発火セル(dist=0)は回転ほぼなし、遠いセルほど揺れる
       const distFactor = item.dist === 0 ? 0.01 : Math.min(item.dist * 0.22, 0.8);
       rotVel[item.ti][item.si] += item.value * distFactor;
     } else {
@@ -216,25 +251,16 @@ function render() {
   }
   glowQueue = remaining;
 
-  // glowMap減衰（イーズアウト）
   for (let ti2 = 0; ti2 < TRACKS.length; ti2++) {
     for (let si2 = 0; si2 < STEPS; si2++) {
       const v = glowMap[ti2][si2];
       glowMap[ti2][si2] = v * (0.70 + v * 0.15);
-    }
-  }
-
-  // 回転物理演算
-  for (let ti2 = 0; ti2 < TRACKS.length; ti2++) {
-    for (let si2 = 0; si2 < STEPS; si2++) {
-      // 角速度に減衰とバネ（中央に戻る力）
       rotVel[ti2][si2] *= 0.92;
-      rotVel[ti2][si2] -= rotAngle[ti2][si2] * 0.06; // バネ
+      rotVel[ti2][si2] -= rotAngle[ti2][si2] * 0.06;
       rotAngle[ti2][si2] += rotVel[ti2][si2];
     }
   }
 
-  // セル描画（screen合成 + shadowBlur）
   ctx.globalCompositeOperation = 'screen';
   for (let ti = 0; ti < TRACKS.length; ti++) {
     for (let si = 0; si < STEPS; si++) {
@@ -261,47 +287,52 @@ function render() {
     }
   }
   ctx.shadowBlur = 0;
-  ctx.shadowColor = 'transparent';
   ctx.globalCompositeOperation = 'source-over';
-
-
-
   requestAnimationFrame(render);
 }
 
-// タッチ判定
 function hitTest(px, py) {
-  const col = Math.floor(px / cellW);
-  const totalRow = Math.floor(py / cellH);
-  const ti = Math.floor(totalRow / ROWS);
-  const row = totalRow % ROWS;
-  if (col < 0 || col >= COLS || ti < 0 || ti >= TRACKS.length) return null;
-  const si = row * COLS + col;
-  return { ti, si };
+  const rect = canvas.getBoundingClientRect();
+  const x = (px - rect.left) * (canvas.width / rect.width);
+  const y = (py - rect.top) * (canvas.height / rect.height);
+  if (x < 0 || x >= W || y < 0 || y >= H) return null;
+  const col = Math.floor(x / cellW);
+  const totalSlots = TRACKS.length * ROWS;
+  const vGap = (H - cellH * totalSlots) / (totalSlots + 1);
+  for (let ti = 0; ti < TRACKS.length; ti++) {
+    for (let r = 0; r < ROWS; r++) {
+      const idx = ti * ROWS + r;
+      const cellYStart = vGap + idx * (cellH + vGap);
+      const cellYEnd = cellYStart + cellH;
+      if (y >= cellYStart - 2 && y <= cellYEnd + 2) {
+        return { ti, si: r * COLS + col };
+      }
+    }
+  }
+  return null;
 }
 
-function handleTap(px, py) {
-  const hit = hitTest(px, py - 88);
+function handleInteraction(px, py) {
+  const hit = hitTest(px, py);
   if (!hit) return;
   const { ti, si } = hit;
   patterns[currentPat][ti][si] = !patterns[currentPat][ti][si];
-  if (patterns[currentPat][ti][si]) {
-    playSound(ti);
-  }
+  glowMap[ti][si] = 1.0; 
+  if (patterns[currentPat][ti][si]) playSound(ti);
 }
 
-window.addEventListener('click', e => { if (e.target.closest('#ctrl') || e.target.closest('#start')) return; handleTap(e.clientX, e.clientY); });
-window.addEventListener('touchstart', e => {
-  if (e.target.closest('#ctrl') || e.target.closest('#start')) return;
-  e.preventDefault();
-  for (const t of e.changedTouches) handleTap(t.clientX, t.clientY);
+canvas.addEventListener('mousedown', e => handleInteraction(e.clientX, e.clientY));
+canvas.addEventListener('touchstart', e => {
+  if (e.cancelable) e.preventDefault();
+  const touch = e.changedTouches[0];
+  handleInteraction(touch.clientX, touch.clientY);
 }, { passive: false });
 
-// 音声
 function playSound(ti) {
   if (!audioCtx) return;
   const t = audioCtx.currentTime;
   const track = TRACKS[ti];
+  if (track === 'HH' || track === 'OH') createParticles();
   if (track === 'BD') bd(t);
   else if (track === 'CL') cl(t);
   else if (track === 'HH') hh(t, 0.07);
@@ -347,9 +378,7 @@ function mkNoise(dur) {
 
 function tick() {
   for (let ti = 0; ti < TRACKS.length; ti++) {
-    if (patterns[currentPat][ti][currentStep]) {
-      playSound(ti);
-    }
+    if (patterns[currentPat][ti][currentStep]) playSound(ti);
   }
   currentStep = (currentStep + 1) % STEPS;
 }
@@ -375,25 +404,7 @@ function switchPat(pi) {
   document.querySelectorAll('.pat-btn').forEach((b, bi) => b.classList.toggle('active', bi === pi));
 }
 
-function buildGrid() {
-  const grid = document.getElementById('grid');
-  grid.innerHTML = '';
-  for (let ti = 0; ti < TRACKS.length; ti++) {
-    const block = document.createElement('div');
-    block.className = 'track-block';
-    for (let row = 0; row < ROWS; row++) {
-      const rowEl = document.createElement('div');
-      rowEl.className = 'track-row';
-      for (let col = 0; col < COLS; col++) {
-        const cell = document.createElement('div');
-        cell.className = 'cell';
-        rowEl.appendChild(cell);
-      }
-      block.appendChild(rowEl);
-    }
-    grid.appendChild(block);
-  }
-
+function buildInterface() {
   const pg = document.getElementById('patGroup');
   pg.innerHTML = '';
   for (let i = 0; i < NUM_PAT; i++) {
@@ -421,12 +432,9 @@ document.getElementById('bpmDown').addEventListener('click', () => {
 function handleStart(e) {
   e.preventDefault();
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  const buf = audioCtx.createBuffer(1, 1, 22050);
-  const src = audioCtx.createBufferSource();
-  src.buffer = buf; src.connect(audioCtx.destination); src.start(0);
   document.getElementById('start').style.display = 'none';
   resize();
-  buildGrid();
+  buildInterface();
   render();
 }
 
