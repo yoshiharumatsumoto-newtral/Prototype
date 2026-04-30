@@ -120,15 +120,15 @@ function resize() {
 }
 
 function createParticles() {
-  const count = 50; 
+  const count = 120; 
   for (let i = 0; i < count; i++) {
     particles.push({
       x: Math.random() * W,
       y: Math.random() * H,
-      vx: (Math.random() - 0.5) * 20,
-      vy: (Math.random() - 0.5) * 20,
+      vx: (Math.random() - 0.5) * 15,
+      vy: (Math.random() - 0.5) * 15,
       life: 1.0,
-      decay: 0.01 + Math.random() * 0.04
+      decay: 0.01 + Math.random() * 0.03
     });
   }
 }
