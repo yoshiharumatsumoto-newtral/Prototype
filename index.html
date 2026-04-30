@@ -3,18 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>NWTRL. SEQUENCER</title>
+<title>NWTRL. SPACE DUB SEQUENCER</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: #000;
-    overflow: hidden;
+    background: #000; overflow: hidden;
     width: 100vw; height: 100vh;
     font-family: 'Share Tech Mono', monospace;
-    user-select: none;
-    -webkit-user-select: none;
-    -webkit-tap-highlight-color: transparent;
+    user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
   }
   #start {
     position: fixed; inset: 0; background: #000;
@@ -23,7 +20,6 @@
     z-index: 20; cursor: pointer;
   }
   #start p { font-size: 10px; letter-spacing: 0.4em; color: rgba(255,255,255,0.35); }
-  #start small { font-size: 9px; letter-spacing: 0.2em; color: rgba(255,255,255,0.15); }
 
   #ctrl {
     position: fixed; top: 0; left: 0; right: 0; height: 88px;
@@ -33,59 +29,51 @@
   }
   .ctrl-row { display: flex; align-items: center; gap: 12px; }
   .brand { font-size: 9px; letter-spacing: 0.45em; color: rgba(255,255,255,0.18); }
+  
+  .dub-btn {
+    font-size: 9px; letter-spacing: 0.3em; color: rgba(255,255,255,0.12);
+    background: none; border: 1px solid rgba(255,255,255,0.05);
+    padding: 6px 12px; cursor: pointer; transition: all 0.2s;
+    border-radius: 2px; margin-left: 10px;
+  }
+  .dub-btn.active {
+    color: rgba(255,255,255,0.9);
+    border-color: rgba(255,255,255,0.4);
+    box-shadow: 0 0 15px rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.03);
+  }
+
   .ctrl-btn {
     width: 34px; height: 34px; border-radius: 50%;
     border: 1px solid rgba(255,255,255,0.18);
     background: none; color: rgba(255,255,255,0.45);
-    font-size: 11px; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    transition: all 0.12s;
+    font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center;
   }
   .ctrl-btn.playing { border-color: rgba(255,255,255,0.55); color: rgba(255,255,255,0.85); }
-  .ctrl-btn:active { transform: scale(0.88); }
   .pat-group { display: flex; gap: 0; flex: 1; }
   .pat-btn {
-    flex: 1; height: 34px; border: none;
-    border-right: 1px solid rgba(255,255,255,0.06);
-    background: none; color: rgba(255,255,255,0.2);
-    font-size: 11px; cursor: pointer; transition: all 0.1s;
-    font-family: 'Share Tech Mono', monospace;
+    flex: 1; height: 34px; border: none; border-right: 1px solid rgba(255,255,255,0.06);
+    background: none; color: rgba(255,255,255,0.2); font-size: 11px;
   }
-  .pat-btn:last-child { border-right: none; }
   .pat-btn.active { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.8); }
   .bpm-wrap { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-  .bpm-label { font-size: 8px; letter-spacing: 0.3em; color: rgba(255,255,255,0.2); }
   .bpm-val { font-size: 20px; color: rgba(255,255,255,0.55); min-width: 42px; text-align: center; }
-  .bpm-btn {
-    width: 22px; height: 22px; border: 1px solid rgba(255,255,255,0.12);
-    background: none; color: rgba(255,255,255,0.3);
-    font-size: 13px; cursor: pointer; border-radius: 2px;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .bpm-btn:active { background: rgba(255,255,255,0.08); }
+  .bpm-btn { width: 22px; height: 22px; border: 1px solid rgba(255,255,255,0.12); background: none; color: rgba(255,255,255,0.3); }
 
-  #c {
-    position: fixed;
-    top: 88px; left: 0;
-    z-index: 1;
-    touch-action: none;
-  }
+  #c { position: fixed; top: 88px; left: 0; z-index: 1; touch-action: none; }
 </style>
 </head>
 <body>
 
-<div id="start">
-  <p>TAP TO START</p>
-  <small>BLUE MONDAY preset</small>
-</div>
+<div id="start"><p>TAP TO START</p></div>
 
 <div id="ctrl">
   <div class="ctrl-row">
-    <span class="brand">NWTRL. SEQUENCER</span>
+    <span class="brand">NWTRL. DUB ENGINE</span>
+    <button class="dub-btn" id="dubBtn">SPACE ECHO MODE</button>
     <div class="bpm-wrap">
-      <span class="bpm-label">BPM</span>
       <button class="bpm-btn" id="bpmDown">−</button>
-      <div class="bpm-val" id="bpmVal">130</div>
+      <div class="bpm-val" id="bpmVal">72</div>
       <button class="bpm-btn" id="bpmUp">＋</button>
     </div>
   </div>
@@ -110,6 +98,11 @@ const ROWS = 4;
 
 let W, H, cellW, cellH;
 let particles = [];
+let isDubMode = false;
+
+// Web Audio Nodes
+let audioCtx = null;
+let delayNode, feedbackNode, filterNode;
 
 function resize() {
   W = canvas.width = window.innerWidth;
@@ -120,77 +113,113 @@ function resize() {
 }
 
 function createParticles() {
-  const count = 120; 
+  const count = isDubMode ? 100 : 40;
   for (let i = 0; i < count; i++) {
     particles.push({
       x: Math.random() * W,
       y: Math.random() * H,
-      vx: (Math.random() - 0.5) * 15,
-      vy: (Math.random() - 0.5) * 15,
+      vx: (Math.random() - 0.5) * (isDubMode ? 20 : 10),
+      vy: (Math.random() - 0.5) * (isDubMode ? 20 : 10),
       life: 1.0,
-      decay: 0.01 + Math.random() * 0.03
+      decay: isDubMode ? 0.005 : (0.02 + Math.random() * 0.05)
     });
   }
 }
 
+// 初期パターン (BPMを落としたDUB仕様)
 const P = [
-  // Pattern 1: スカスカ / 最小構成 (ワンドロップ)
-  [
-    [0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1], // HH (粒子)
-    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], // OH
-    [0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0], // CL (SD)
-    [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0]  // BD
-  ],
-  
-  // Pattern 2: 少し跳ねる / グルーヴあり
-  [
-    [0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1], // HH (粒子)
-    [0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0], // OH
-    [0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0], // CL (SD)
-    [1,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0]  // BD
-  ],
-  
-  // Pattern 3: Blue Monday (★お気に入りの復元)
-  [
-    [0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0], // HH (粒子)
-    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], // OH
-    [0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0], // CL
-    [1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0]  // BD
-  ],
-
-  // Pattern 4: 重い / ダウナー (松本さんの新提案)
-  [
-    [0,1,0,0,0,1,0,0,0,1,0,0,0,1,0,0], // HH (粒子)
-    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0], // OH
-    [0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0], // CL
-    [1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0]  // BD
-  ]
+  [[0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0],[0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0],[0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0],[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,0]],
+  [[0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1],[0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1],[0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0],[1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0]],
+  [[1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0],[1,0,0,1,0,0,1,0,0,0,1,0,0,0,0,0]],
+  [[0,1,0,0,0,1,0,0,0,1,0,0,0,1,0,0],[0,0,0,0,0,0,0,1,0,0,0,0,0,0,1,0],[0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0],[1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0]],
 ].map(pat => pat.map(r => r.map(v => v === 1)));
 
-let bpm = 130;
+let bpm = 72; // DUBに最適なゆったりしたBPM
 let playing = false;
 let currentStep = 0;
 let intervalId = null;
 let currentPat = 0;
-let audioCtx = null;
 let patterns = P.map(pat => pat.map(r => [...r]));
-
-let pulsePhase = 0;
 let glowMap = Array.from({length: 4}, () => new Array(16).fill(0));
-let glowQueue = [];
-let frameCount = 0;
-let rotAngle = Array.from({length: 4}, () => new Array(16).fill(0));
-let rotVel = Array.from({length: 4}, () => new Array(16).fill(0));
 
-function cellPos(ti, si) {
-  const col = si % COLS;
-  const row = Math.floor(si / COLS);
-  const x = col * cellW;
-  const totalSlots = TRACKS.length * ROWS;
-  const vGap = (H - cellH * totalSlots) / (totalSlots + 1);
-  const idx = ti * ROWS + row;
-  const y = vGap + idx * (cellH + vGap);
-  return { x, y };
+function setupDubCircuit() {
+  if (!audioCtx) return;
+  delayNode = audioCtx.createDelay(2.0);
+  feedbackNode = audioCtx.createGain();
+  filterNode = audioCtx.createBiquadFilter();
+
+  filterNode.type = 'lowpass';
+  filterNode.frequency.value = 1800; // RE-201的なこもった音
+
+  delayNode.connect(filterNode);
+  filterNode.connect(feedbackNode);
+  feedbackNode.connect(delayNode);
+  delayNode.connect(audioCtx.destination);
+}
+
+function playSound(ti) {
+  if (!audioCtx) return;
+  if (!delayNode) setupDubCircuit();
+
+  const t = audioCtx.currentTime;
+  const track = TRACKS[ti];
+  const g = audioCtx.createGain();
+  let src;
+
+  // 音源生成
+  if (track === 'BD') {
+    src = audioCtx.createOscillator();
+    src.frequency.setValueAtTime(140, t);
+    src.frequency.exponentialRampToValueAtTime(45, t + 0.2);
+    g.gain.setValueAtTime(1.0, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+  } else if (track === 'CL') {
+    src = audioCtx.createBufferSource();
+    src.buffer = mkNoise(0.08);
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'bandpass'; filter.frequency.value = 800;
+    src.connect(filter); filter.connect(g);
+    g.gain.setValueAtTime(0.7, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+  } else {
+    src = audioCtx.createBufferSource();
+    const dur = track === 'HH' ? 0.05 : 0.25;
+    src.buffer = mkNoise(dur);
+    g.gain.setValueAtTime(0.4, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  }
+
+  src.connect(g);
+  src.start(t);
+
+  // 1. ドライ音 (そのまま出力)
+  g.connect(audioCtx.destination);
+
+  // 2. エコー回路へのセンド
+  const sendGain = audioCtx.createGain();
+  // DUBモード中はセンド量を上げる
+  sendGain.gain.setValueAtTime(isDubMode ? 0.8 : 0.15, t);
+  g.connect(sendGain);
+  sendGain.connect(delayNode);
+
+  // フィードバックとディレイタイムの調整
+  const fb = isDubMode ? 0.82 : 0.45;
+  feedbackNode.gain.setTargetAtTime(fb, t, 0.1);
+  
+  // 3/16音符のディレイタイム (DUBの黄金律)
+  const dTime = (60 / bpm) * 0.75;
+  delayNode.delayTime.setTargetAtTime(dTime, t, 0.2);
+
+  if (track === 'HH' || track === 'OH' || track === 'CL') createParticles();
+  glowMap[ti][currentStep] = 1.0;
+}
+
+function mkNoise(dur) {
+  const len = audioCtx.sampleRate * dur;
+  const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  return buf;
 }
 
 function render() {
@@ -200,185 +229,55 @@ function render() {
   ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
-    p.x += p.vx;
-    p.y += p.vy;
+    p.x += p.vx; p.y += p.vy;
     p.life -= p.decay;
-    if (p.life <= 0) {
-      particles.splice(i, 1);
-      continue;
-    }
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
     ctx.globalAlpha = p.life;
     ctx.fillRect(p.x, p.y, 1.2, 1.2);
   }
   ctx.globalAlpha = 1.0;
 
-  const pat = patterns[currentPat];
-  if (playing) pulsePhase += 0.018;
-  else pulsePhase = 0;
-  const pulse = 0.12 + Math.sin(pulsePhase * Math.PI * 2) * 0.04;
-  frameCount++;
-
-  if (playing) {
-    for (let ti = 0; ti < TRACKS.length; ti++) {
-      if (pat[ti][currentStep]) {
-        const srcGRow = ti * ROWS + Math.floor(currentStep / COLS);
-        const srcGCol = currentStep % COLS;
-        for (let ti2 = 0; ti2 < TRACKS.length; ti2++) {
-          for (let si2 = 0; si2 < STEPS; si2++) {
-            const dstGRow = ti2 * ROWS + Math.floor(si2 / COLS);
-            const dstGCol = si2 % COLS;
-            const dRow = Math.abs(dstGRow - srcGRow);
-            const dCol = Math.abs(dstGCol - srcGCol);
-            const dist = Math.sqrt(dRow * dRow + dCol * dCol);
-            const value = dist === 0 ? 1.5 : 0.18 / (1 + dist * 1.5);
-            const delay = Math.round(dist * 5);
-            glowQueue.push({ ti: ti2, si: si2, value, dist, fireAt: frameCount + delay });
-          }
-        }
-      }
-    }
-  }
-
-  const remaining = [];
-  for (const item of glowQueue) {
-    if (frameCount >= item.fireAt) {
-      glowMap[item.ti][item.si] = Math.min(glowMap[item.ti][item.si] + item.value, 1.0);
-      const distFactor = item.dist === 0 ? 0.01 : Math.min(item.dist * 0.22, 0.8);
-      rotVel[item.ti][item.si] += item.value * distFactor;
-    } else {
-      remaining.push(item);
-    }
-  }
-  glowQueue = remaining;
-
-  for (let ti2 = 0; ti2 < TRACKS.length; ti2++) {
-    for (let si2 = 0; si2 < STEPS; si2++) {
-      const v = glowMap[ti2][si2];
-      glowMap[ti2][si2] = v * (0.70 + v * 0.15);
-      rotVel[ti2][si2] *= 0.92;
-      rotVel[ti2][si2] -= rotAngle[ti2][si2] * 0.06;
-      rotAngle[ti2][si2] += rotVel[ti2][si2];
-    }
-  }
-
-  ctx.globalCompositeOperation = 'screen';
   for (let ti = 0; ti < TRACKS.length; ti++) {
     for (let si = 0; si < STEPS; si++) {
       const { x, y } = cellPos(ti, si);
-      const isOn = pat[ti][si];
-      const glow = glowMap[ti][si];
-      const base = isOn ? pulse : 0.008;
-      const total = Math.min(base + glow, 1.0);
-      if (total > 0.01) {
-        const blur = total * cellW * 2.0;
-        ctx.shadowBlur = blur;
-        ctx.shadowColor = `rgba(255,255,255,${total})`;
-        ctx.fillStyle = `rgba(255,255,255,${total})`;
-        const pad = cellW * 0.15;
-        const cx = x + cellW / 2;
-        const cy = y + cellH / 2;
-        const angle = rotAngle[ti][si];
-        ctx.save();
-        ctx.translate(cx, cy);
-        ctx.rotate(angle);
-        ctx.fillRect(-cellW/2 + pad, -cellH/2 + pad, cellW - pad*2, cellH - pad*2);
-        ctx.restore();
+      glowMap[ti][si] *= 0.9;
+      const isActive = patterns[currentPat][ti][si];
+      const val = (isActive ? 0.15 : 0.03) + glowMap[ti][si] * 0.5;
+      ctx.fillStyle = `rgba(255,255,255,${val})`;
+      ctx.fillRect(x + cellW*0.1, y + cellH*0.1, cellW*0.8, cellH*0.8);
+      
+      if (playing && si === currentStep) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.strokeRect(x, y, cellW, cellH);
       }
     }
   }
-  ctx.shadowBlur = 0;
-  ctx.globalCompositeOperation = 'source-over';
   requestAnimationFrame(render);
 }
 
-function hitTest(px, py) {
-  const rect = canvas.getBoundingClientRect();
-  const x = (px - rect.left) * (canvas.width / rect.width);
-  const y = (py - rect.top) * (canvas.height / rect.height);
-  if (x < 0 || x >= W || y < 0 || y >= H) return null;
-  const col = Math.floor(x / cellW);
-  const totalSlots = TRACKS.length * ROWS;
-  const vGap = (H - cellH * totalSlots) / (totalSlots + 1);
-  for (let ti = 0; ti < TRACKS.length; ti++) {
-    for (let r = 0; r < ROWS; r++) {
-      const idx = ti * ROWS + r;
-      const cellYStart = vGap + idx * (cellH + vGap);
-      const cellYEnd = cellYStart + cellH;
-      if (y >= cellYStart - 2 && y <= cellYEnd + 2) {
-        return { ti, si: r * COLS + col };
-      }
-    }
-  }
-  return null;
+function cellPos(ti, si) {
+  const col = si % COLS;
+  const row = Math.floor(si / COLS);
+  const x = col * cellW;
+  const idx = ti * ROWS + row;
+  const vGap = (H - cellH * (TRACKS.length * ROWS)) / (TRACKS.length * ROWS + 1);
+  return { x, y: vGap + idx * (cellH + vGap) };
 }
 
-function handleInteraction(px, py) {
-  const hit = hitTest(px, py);
-  if (!hit) return;
-  const { ti, si } = hit;
-  patterns[currentPat][ti][si] = !patterns[currentPat][ti][si];
-  glowMap[ti][si] = 1.0; 
-  if (patterns[currentPat][ti][si]) playSound(ti);
-}
-
-canvas.addEventListener('mousedown', e => handleInteraction(e.clientX, e.clientY));
-canvas.addEventListener('touchstart', e => {
-  if (e.cancelable) e.preventDefault();
-  const touch = e.changedTouches[0];
-  handleInteraction(touch.clientX, touch.clientY);
-}, { passive: false });
-
-function playSound(ti) {
-  if (!audioCtx) return;
-  const t = audioCtx.currentTime;
-  const track = TRACKS[ti];
-  if (track === 'HH' || track === 'OH') createParticles();
-  if (track === 'BD') bd(t);
-  else if (track === 'CL') cl(t);
-  else if (track === 'HH') hh(t, 0.07);
-  else if (track === 'OH') hh(t, 0.38);
-}
-
-function bd(t) {
-  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-  o.connect(g); g.connect(audioCtx.destination);
-  o.frequency.setValueAtTime(160, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.18);
-  g.gain.setValueAtTime(1.3, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
-  o.start(t); o.stop(t + 0.4);
-}
-
-function cl(t) {
-  for (let i = 0; i < 3; i++) {
-    const src = audioCtx.createBufferSource(), g = audioCtx.createGain(), f = audioCtx.createBiquadFilter();
-    f.type = 'bandpass'; f.frequency.value = 1100; f.Q.value = 0.9;
-    src.buffer = mkNoise(0.018);
-    src.connect(f); f.connect(g); g.connect(audioCtx.destination);
-    g.gain.setValueAtTime(0.75, t + i * 0.012);
-    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.012 + 0.02);
-    src.start(t + i * 0.012);
-  }
-}
-
-function hh(t, dur) {
-  const src = audioCtx.createBufferSource(), g = audioCtx.createGain(), f = audioCtx.createBiquadFilter();
-  f.type = 'highpass'; f.frequency.value = 7500;
-  src.buffer = mkNoise(dur);
-  src.connect(f); f.connect(g); g.connect(audioCtx.destination);
-  g.gain.setValueAtTime(0.55, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.9);
-  src.start(t);
-}
-
-function mkNoise(dur) {
-  const len = Math.floor(audioCtx.sampleRate * dur);
-  const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-  return buf;
-}
+const dubBtn = document.getElementById('dubBtn');
+const setDub = (val) => {
+  isDubMode = val;
+  dubBtn.classList.toggle('active', val);
+};
+dubBtn.addEventListener('mousedown', () => setDub(true));
+window.addEventListener('mouseup', () => setDub(false));
+dubBtn.addEventListener('touchstart', (e) => { e.preventDefault(); setDub(true); });
+window.addEventListener('touchend', () => setDub(false));
 
 function tick() {
+  const pat = patterns[currentPat];
   for (let ti = 0; ti < TRACKS.length; ti++) {
-    if (patterns[currentPat][ti][currentStep]) playSound(ti);
+    if (pat[ti][currentStep]) playSound(ti);
   }
   currentStep = (currentStep + 1) % STEPS;
 }
@@ -386,7 +285,6 @@ function tick() {
 function startPlay() {
   if (playing) return;
   playing = true;
-  document.getElementById('playBtn').classList.add('playing');
   document.getElementById('playBtn').textContent = '❚❚';
   intervalId = setInterval(tick, (60 / bpm / 4) * 1000);
 }
@@ -395,13 +293,7 @@ function stopPlay() {
   playing = false;
   clearInterval(intervalId);
   currentStep = 0;
-  document.getElementById('playBtn').classList.remove('playing');
   document.getElementById('playBtn').textContent = '▶';
-}
-
-function switchPat(pi) {
-  currentPat = pi;
-  document.querySelectorAll('.pat-btn').forEach((b, bi) => b.classList.toggle('active', bi === pi));
 }
 
 function buildInterface() {
@@ -411,35 +303,24 @@ function buildInterface() {
     const btn = document.createElement('button');
     btn.className = 'pat-btn' + (i === 0 ? ' active' : '');
     btn.textContent = i + 1;
-    btn.addEventListener('click', () => switchPat(i));
+    btn.onclick = () => {
+      currentPat = i;
+      document.querySelectorAll('.pat-btn').forEach((b, idx) => b.classList.toggle('active', idx === i));
+    };
     pg.appendChild(btn);
   }
 }
 
-document.getElementById('playBtn').addEventListener('click', () => playing ? stopPlay() : startPlay());
-document.getElementById('stopBtn').addEventListener('click', stopPlay);
-document.getElementById('bpmUp').addEventListener('click', () => {
-  bpm = Math.min(300, bpm + 2);
-  document.getElementById('bpmVal').textContent = bpm;
-  if (playing) { stopPlay(); startPlay(); }
-});
-document.getElementById('bpmDown').addEventListener('click', () => {
-  bpm = Math.max(40, bpm - 2);
-  document.getElementById('bpmVal').textContent = bpm;
-  if (playing) { stopPlay(); startPlay(); }
-});
+document.getElementById('playBtn').onclick = () => playing ? stopPlay() : startPlay();
+document.getElementById('stopBtn').onclick = stopPlay;
+document.getElementById('bpmUp').onclick = () => { bpm += 2; document.getElementById('bpmVal').textContent = bpm; if(playing){stopPlay();startPlay();} };
+document.getElementById('bpmDown').onclick = () => { bpm -= 2; document.getElementById('bpmVal').textContent = bpm; if(playing){stopPlay();startPlay();} };
 
-function handleStart(e) {
-  e.preventDefault();
+document.getElementById('start').onclick = (e) => {
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   document.getElementById('start').style.display = 'none';
-  resize();
-  buildInterface();
-  render();
-}
-
-document.getElementById('start').addEventListener('click', handleStart);
-document.getElementById('start').addEventListener('touchstart', handleStart, { passive: false });
+  resize(); buildInterface(); render();
+};
 window.addEventListener('resize', resize);
 </script>
 </body>
